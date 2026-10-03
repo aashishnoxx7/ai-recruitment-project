@@ -1,0 +1,963 @@
+"use client";
+
+import Navbar from "@/components/Navbar";
+import Sidebar from "@/components/Sidebar";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import Loading from "@/components/ui/loading";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { useAuth } from "@/contexts/AuthContext";
+import { userAPI } from "@/lib/api";
+import {
+  AlertTriangle,
+  Briefcase,
+  ChevronLeft,
+  ChevronRight,
+  Crown,
+  Edit,
+  Eye,
+  EyeOff,
+  Filter,
+  Mail,
+  Search,
+  Shield,
+  Trash2,
+  UserCog,
+  UserPlus,
+  Users,
+} from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+
+export default function AddPeoplePage() {
+  const { user, loading } = useAuth();
+  const router = useRouter();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [users, setUsers] = useState([]);
+  const [loadingUsers, setLoadingUsers] = useState(true);
+  const [formOpen, setFormOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [userToDelete, setUserToDelete] = useState(null);
+  const [editingUser, setEditingUser] = useState(null);
+
+  // Filter and pagination states
+  const [searchQuery, setSearchQuery] = useState("");
+  const [roleFilter, setRoleFilter] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pagination, setPagination] = useState({
+    totalCount: 0,
+    totalPages: 1,
+    currentPage: 1,
+    pageSize: 7,
+  });
+  const [formData, setFormData] = useState({
+    name: "",
+    email: "",
+    password: "",
+    confirmPassword: "",
+    role: "",
+    assignedManager: "",
+  });
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [managers, setManagers] = useState([]);
+  const [loadingManagers, setLoadingManagers] = useState(false);
+
+  useEffect(() => {
+    if (loading) return;
+
+    if (!user) {
+      router.push("/login");
+      return;
+    }
+
+    if (user.role !== "admin") {
+      router.push(`/dashboard/${user.role}`);
+      return;
+    }
+
+    // Fetch users when admin is available
+    fetchUsers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, loading]); // Removed router from dependencies to prevent re-renders
+
+  // Debounce search query
+  useEffect(() => {
+    if (user && user.role === "admin") {
+      const timeoutId = setTimeout(() => {
+        setCurrentPage(1);
+        fetchUsers();
+      }, 500); // 500ms debounce
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [searchQuery]);
+
+  // Fetch users when role filter changes
+  useEffect(() => {
+    if (user && user.role === "admin") {
+      setCurrentPage(1);
+      fetchUsers();
+    }
+  }, [roleFilter]);
+
+  // Fetch users when page changes
+  useEffect(() => {
+    if (user && user.role === "admin") {
+      fetchUsers();
+    }
+  }, [currentPage]);
+
+  const fetchUsers = async () => {
+    try {
+      setLoadingUsers(true);
+      const response = await userAPI.getUsers({
+        filterRole: roleFilter || null,
+        search: searchQuery,
+        page: currentPage,
+        pageSize: 7,
+      });
+      setUsers(response.users || []);
+      setPagination({
+        totalCount: response.totalCount || 0,
+        totalPages: response.totalPages || 1,
+        currentPage: response.currentPage || 1,
+        pageSize: response.pageSize || 7,
+      });
+    } catch (err) {
+      setError(err.message || "Failed to fetch users");
+    } finally {
+      setLoadingUsers(false);
+    }
+  };
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+    if (error) setError("");
+    if (success) setSuccess("");
+  };
+
+  const handleRoleChange = (value) => {
+    setFormData((prev) => ({
+      ...prev,
+      role: value,
+      // Clear assignedManager if role changes away from recruiter
+      assignedManager: value === "recruiter" ? prev.assignedManager : "",
+    }));
+    // Fetch managers if role changes to recruiter and managers haven't been loaded
+    if (value === "recruiter" && managers.length === 0 && !loadingManagers) {
+      fetchManagers();
+    }
+    if (error) setError("");
+    if (success) setSuccess("");
+  };
+
+  const handleManagerChange = (value) => {
+    setFormData((prev) => ({
+      ...prev,
+      assignedManager: value,
+    }));
+    if (error) setError("");
+    if (success) setSuccess("");
+  };
+
+  const validateForm = (isEdit = false) => {
+    if (!formData.name || !formData.email || !formData.role) {
+      setError("Please fill in all required fields");
+      return false;
+    }
+
+    // If role is recruiter, assignedManager is required (both create and edit)
+    if (formData.role === "recruiter" && !formData.assignedManager) {
+      setError("Please select a manager for the recruiter");
+      return false;
+    }
+
+    // Password validation only for new users or if password is provided
+    if (!isEdit && !formData.password) {
+      setError("Password is required for new users");
+      return false;
+    }
+
+    if (formData.password && formData.password.length < 6) {
+      setError("Password must be at least 6 characters long");
+      return false;
+    }
+
+    if (formData.password && formData.password !== formData.confirmPassword) {
+      setError("Passwords do not match");
+      return false;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(formData.email)) {
+      setError("Please enter a valid email address");
+      return false;
+    }
+
+    return true;
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
+    setSuccess("");
+
+    if (!validateForm(!!editingUser)) {
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      if (editingUser) {
+        // Update user
+        const updateData = {
+          name: formData.name,
+          email: formData.email,
+          role: formData.role,
+        };
+        if (formData.password) {
+          updateData.password = formData.password;
+        }
+        // Handle assignedManager based on role
+        if (formData.role === "recruiter") {
+          // Only include assignedManager if it's a valid non-empty value
+          if (formData.assignedManager && formData.assignedManager.trim() !== "") {
+            updateData.assignedManager = formData.assignedManager;
+          } else {
+            // If recruiter but no manager selected, set to null to clear
+            updateData.assignedManager = null;
+          }
+        } else {
+          // Clear assignedManager if role is not recruiter
+          updateData.assignedManager = null;
+        }
+        const userId = editingUser.id || editingUser._id;
+        if (!userId) {
+          setError("User ID is missing. Please try again.");
+          setIsSubmitting(false);
+          return;
+        }
+        const response = await userAPI.updateUser(userId, updateData);
+        setSuccess(
+          `User updated successfully! ${response.user.name} has been updated.`
+        );
+      } else {
+        // Create user
+        const { confirmPassword, ...userData } = formData;
+        // Only include assignedManager if role is recruiter
+        if (userData.role !== "recruiter") {
+          delete userData.assignedManager;
+        }
+        const response = await userAPI.createUser(userData);
+        setSuccess(
+          `User created successfully! ${response.user.name} (${response.user.role}) has been added.`
+        );
+      }
+
+      // Reset form and close
+      resetForm();
+      setFormOpen(false);
+      fetchUsers(); // Refresh users list
+
+      setTimeout(() => setSuccess(""), 5000);
+    } catch (err) {
+      setError(err.message || "Failed to save user. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleEdit = (userToEdit) => {
+    setEditingUser(userToEdit);
+    setFormData({
+      name: userToEdit.name || "",
+      email: userToEdit.email || "",
+      password: "",
+      confirmPassword: "",
+      role: userToEdit.role || "",
+      assignedManager: userToEdit.assignedManager || "",
+    });
+    setError("");
+    setSuccess("");
+    setFormOpen(true);
+    // Fetch managers when editing
+    fetchManagers();
+  };
+
+  const handleDeleteClick = (userItem) => {
+    setUserToDelete(userItem);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!userToDelete) return;
+
+    try {
+      await userAPI.deleteUser(userToDelete.id || userToDelete._id);
+      setSuccess(`User ${userToDelete.name} has been deleted successfully.`);
+      setDeleteDialogOpen(false);
+      setUserToDelete(null);
+      fetchUsers(); // Refresh users list
+      setTimeout(() => setSuccess(""), 5000);
+    } catch (err) {
+      setError(err.message || "Failed to delete user. Please try again.");
+      setDeleteDialogOpen(false);
+    }
+  };
+
+  const fetchManagers = async () => {
+    try {
+      setLoadingManagers(true);
+      const response = await userAPI.getManagers();
+      setManagers(response.managers || []);
+    } catch (err) {
+      console.error("Failed to fetch managers:", err);
+    } finally {
+      setLoadingManagers(false);
+    }
+  };
+
+  const resetForm = () => {
+    setFormData({
+      name: "",
+      email: "",
+      password: "",
+      confirmPassword: "",
+      role: "",
+      assignedManager: "",
+    });
+    setEditingUser(null);
+    setError("");
+    setSuccess("");
+  };
+
+  const openAddForm = () => {
+    resetForm();
+    setFormOpen(true);
+    // Fetch managers when opening the form
+    fetchManagers();
+  };
+
+  const getRoleBadgeVariant = (role) => {
+    switch (role?.toLowerCase()) {
+      case "admin":
+        return "secondary";
+      case "manager":
+        return "secondary";
+      case "recruiter":
+        return "secondary";
+      case "candidate":
+        return "outline";
+      default:
+        return "outline";
+    }
+  };
+
+  const getRoleIcon = (role) => {
+    switch (role) {
+      case "admin":
+        return Crown;
+      case "manager":
+        return UserCog;
+      case "recruiter":
+        return Briefcase;
+      default:
+        return Shield;
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loading size="lg" />
+      </div>
+    );
+  }
+
+  if (!user || user.role !== "admin") {
+    return null;
+  }
+
+  return (
+    <div className="flex h-screen overflow-hidden bg-white dark:bg-white">
+      {/* Desktop Sidebar */}
+      <aside className="hidden lg:block">
+        <Sidebar />
+      </aside>
+
+      {/* Mobile Sidebar */}
+      <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+        <SheetContent side="left" className="w-52 p-0">
+          <SheetTitle className="sr-only">Navigation Menu</SheetTitle>
+          <Sidebar />
+        </SheetContent>
+      </Sheet>
+
+      {/* Main Content Area */}
+      <div className="flex flex-1 flex-col overflow-hidden">
+        <Navbar
+          title="Add People"
+          subtitle="Add new users to the system"
+          sidebarOpen={sidebarOpen}
+          onSidebarToggle={setSidebarOpen}
+        />
+
+        {/* Main Content */}
+        <main className="flex-1 overflow-y-auto p-4 lg:p-8">
+          {/* Alerts */}
+          {error && (
+            <Alert variant="destructive" className="mb-4">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+
+          {success && (
+            <Alert className="mb-4 bg-green-50 border-green-200 dark:bg-green-950/20 dark:border-green-800">
+              <AlertDescription className="text-green-800 dark:text-green-200">
+                {success}
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {/* Users Table */}
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-bold flex items-center gap-2 text-foreground">
+                  <Users className="h-6 w-6" />
+                  All Users
+                </h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  View and manage all users in the system
+                </p>
+              </div>
+              <Button onClick={openAddForm} className="gap-2">
+                <UserPlus className="h-4 w-4" />
+                Add People
+              </Button>
+            </div>
+
+            <div>
+              {/* Filters */}
+              <div className="flex flex-col sm:flex-row gap-4 mb-6">
+                {/* Search Input */}
+                <div className="flex-1 relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <Input
+                    type="text"
+                    placeholder="Search by name or email..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-10 bg-white border border-slate-200 focus:border-cyan-500 text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-cyan-500/20 focus:shadow-lg focus:shadow-cyan-500/10 transition-all duration-200"
+                  />
+                </div>
+
+                {/* Role Filter */}
+                <div className="w-full sm:w-48">
+                  <Select
+                    value={roleFilter || "all"}
+                    onValueChange={(value) =>
+                      setRoleFilter(value === "all" ? "" : value)
+                    }
+                  >
+                    <SelectTrigger>
+                      <div className="flex items-center gap-2">
+                        <Filter className="h-4 w-4" />
+                        <SelectValue placeholder="All Roles" />
+                      </div>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Roles</SelectItem>
+                      <SelectItem value="admin">Admin</SelectItem>
+                      <SelectItem value="manager">Manager</SelectItem>
+                      <SelectItem value="recruiter">Recruiter</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Results Count */}
+              {!loadingUsers && (
+                <div className="mb-4 text-sm text-muted-foreground">
+                  Showing {users.length} of {pagination.totalCount} users
+                  {(searchQuery || roleFilter) && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="ml-2 h-auto p-0 text-xs"
+                      onClick={() => {
+                        setSearchQuery("");
+                        setRoleFilter("");
+                        setCurrentPage(1);
+                      }}
+                    >
+                      Clear filters
+                    </Button>
+                  )}
+                </div>
+              )}
+
+              {loadingUsers ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loading message="Loading users..." />
+                </div>
+              ) : users.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12">
+                  <Users className="h-12 w-12 text-muted-foreground mb-4" />
+                  <p className="text-muted-foreground">No users found</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="text-left p-4 font-semibold">Name</th>
+                        <th className="text-left p-4 font-semibold">Email</th>
+                        <th className="text-left p-4 font-semibold">Role</th>
+                        <th className="text-right p-4 font-semibold">
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {users.map((userItem) => (
+                        <tr
+                          key={userItem.id || userItem._id}
+                          className="border-b hover:bg-muted/50 transition-colors"
+                        >
+                          <td className="p-4">
+                            <div className="flex items-center gap-2">
+                              <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
+                                <span className="text-sm font-semibold text-primary">
+                                  {userItem.name?.charAt(0).toUpperCase()}
+                                </span>
+                              </div>
+                              <span className="font-medium">
+                                {userItem.name}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="p-4">
+                            <div className="flex items-center gap-2 text-muted-foreground">
+                              <Mail className="h-4 w-4" />
+                              {userItem.email}
+                            </div>
+                          </td>
+                          <td className="p-4">
+                            {(() => {
+                              const RoleIcon = getRoleIcon(userItem.role);
+                              return (
+                                <Badge
+                                  variant={getRoleBadgeVariant(userItem.role)}
+                                  className="capitalize"
+                                >
+                                  <RoleIcon className="h-4 w-4" />
+                                  <span>{userItem.role}</span>
+                                </Badge>
+                              );
+                            })()}
+                          </td>
+                          <td className="p-4">
+                            <div className="flex items-center justify-end gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleEdit(userItem)}
+                                className="gap-2"
+                              >
+                                <Edit className="h-4 w-4" />
+                                Edit
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleDeleteClick(userItem)}
+                                className="gap-2 text-destructive hover:text-destructive"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                                Delete
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Pagination */}
+              {!loadingUsers && pagination.totalPages > 1 && (
+                <div className="flex items-center justify-between mt-6 pt-4 border-t">
+                  <div className="text-sm text-muted-foreground">
+                    Page {pagination.currentPage} of {pagination.totalPages}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        setCurrentPage((prev) => Math.max(1, prev - 1))
+                      }
+                      disabled={currentPage === 1}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                      Previous
+                    </Button>
+                    <div className="flex items-center gap-1">
+                      {Array.from(
+                        { length: pagination.totalPages },
+                        (_, i) => i + 1
+                      )
+                        .filter((page) => {
+                          // Show first page, last page, current page, and pages around current
+                          return (
+                            page === 1 ||
+                            page === pagination.totalPages ||
+                            (page >= currentPage - 1 && page <= currentPage + 1)
+                          );
+                        })
+                        .map((page, index, array) => {
+                          // Add ellipsis if there's a gap
+                          const showEllipsisBefore =
+                            index > 0 && array[index - 1] !== page - 1;
+                          return (
+                            <div key={page} className="flex items-center gap-1">
+                              {showEllipsisBefore && (
+                                <span className="px-2 text-muted-foreground">
+                                  ...
+                                </span>
+                              )}
+                              <Button
+                                variant={
+                                  currentPage === page ? "default" : "outline"
+                                }
+                                size="sm"
+                                onClick={() => setCurrentPage(page)}
+                                className="min-w-[2.5rem]"
+                              >
+                                {page}
+                              </Button>
+                            </div>
+                          );
+                        })}
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        setCurrentPage((prev) =>
+                          Math.min(pagination.totalPages, prev + 1)
+                        )
+                      }
+                      disabled={currentPage === pagination.totalPages}
+                    >
+                      Next
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </main>
+      </div>
+
+      {/* Add/Edit User Form Dialog */}
+      <Dialog open={formOpen} onOpenChange={setFormOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-2xl">
+              <UserPlus className="h-6 w-6" />
+              {editingUser ? "Edit User" : "Add New User"}
+            </DialogTitle>
+            <DialogDescription>
+              {editingUser
+                ? "Update user information below"
+                : "Fill in the details to create a new user account"}
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Error Alert */}
+          {error && (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+
+          {/* Success Alert */}
+          {success && (
+            <Alert className="bg-green-50 border-green-200 dark:bg-green-950/20 dark:border-green-800">
+              <AlertDescription className="text-green-800 dark:text-green-200">
+                {success}
+              </AlertDescription>
+            </Alert>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Name Field */}
+            <div className="space-y-2">
+              <Label htmlFor="name">
+                Full Name <span className="text-red-500">*</span>
+              </Label>
+              <Input
+                id="name"
+                name="name"
+                type="text"
+                value={formData.name}
+                onChange={handleChange}
+                placeholder="Enter full name"
+                required
+              />
+            </div>
+
+            {/* Email Field */}
+            <div className="space-y-2">
+              <Label htmlFor="email">
+                Email Address <span className="text-red-500">*</span>
+              </Label>
+              <Input
+                id="email"
+                name="email"
+                type="email"
+                value={formData.email}
+                onChange={handleChange}
+                placeholder="Enter email address"
+                required
+              />
+            </div>
+
+            {/* Role Field */}
+            <div className="space-y-2">
+              <Label htmlFor="role">
+                Role <span className="text-red-500">*</span>
+              </Label>
+              <Select
+                value={formData.role}
+                onValueChange={handleRoleChange}
+                required
+              >
+                <SelectTrigger id="role">
+                  <SelectValue placeholder="Select a role" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="manager">Manager</SelectItem>
+                  <SelectItem value="recruiter">Recruiter</SelectItem>
+                  <SelectItem value="admin">Admin</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Select the role for the user
+              </p>
+            </div>
+
+            {/* Manager Selection Field - Show when role is recruiter (create or edit) */}
+            {formData.role === "recruiter" && (
+              <div className="space-y-2">
+                <Label htmlFor="assignedManager">
+                  Assign Manager <span className="text-red-500">*</span>
+                </Label>
+                <Select
+                  value={formData.assignedManager}
+                  onValueChange={handleManagerChange}
+                  required
+                  disabled={loadingManagers}
+                >
+                  <SelectTrigger id="assignedManager">
+                    <SelectValue placeholder="Select a manager" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {loadingManagers ? (
+                      <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                        Loading managers...
+                      </div>
+                    ) : managers.length === 0 ? (
+                      <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                        No managers available
+                      </div>
+                    ) : (
+                      managers.map((manager) => (
+                        <SelectItem
+                          key={manager.id || manager._id}
+                          value={manager.id || manager._id}
+                        >
+                          {manager.name} ({manager.email})
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Select the manager under which this recruiter will work
+                </p>
+              </div>
+            )}
+
+            {/* Password Field */}
+            <div className="space-y-2">
+              <Label htmlFor="password">
+                Password{" "}
+                {!editingUser && <span className="text-red-500">*</span>}
+              </Label>
+              <div className="relative">
+                <Input
+                  id="password"
+                  name="password"
+                  type={showPassword ? "text" : "password"}
+                  value={formData.password}
+                  onChange={handleChange}
+                  placeholder={
+                    editingUser
+                      ? "Leave blank to keep current password"
+                      : "Enter password (min. 6 characters)"
+                  }
+                  minLength={formData.password ? 6 : undefined}
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground focus:outline-none"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
+              {editingUser && (
+                <p className="text-xs text-muted-foreground">
+                  Leave blank to keep the current password
+                </p>
+              )}
+            </div>
+
+            {/* Confirm Password Field */}
+            {formData.password && (
+              <div className="space-y-2">
+                <Label htmlFor="confirmPassword">
+                  Confirm Password <span className="text-red-500">*</span>
+                </Label>
+                <div className="relative">
+                  <Input
+                    id="confirmPassword"
+                    name="confirmPassword"
+                    type={showConfirmPassword ? "text" : "password"}
+                    value={formData.confirmPassword}
+                    onChange={handleChange}
+                    placeholder="Confirm password"
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground focus:outline-none"
+                    aria-label={
+                      showConfirmPassword ? "Hide password" : "Show password"
+                    }
+                  >
+                    {showConfirmPassword ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setFormOpen(false);
+                  resetForm();
+                }}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting
+                  ? editingUser
+                    ? "Updating..."
+                    : "Creating..."
+                  : editingUser
+                  ? "Update User"
+                  : "Create User"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="h-5 w-5" />
+              Delete User
+            </DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete{" "}
+              <span className="font-semibold text-foreground">
+                {userToDelete?.name}
+              </span>
+              ? This action cannot be undone and will permanently remove the
+              user from the system.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDeleteDialogOpen(false);
+                setUserToDelete(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteConfirm}
+              className="gap-2"
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete User
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

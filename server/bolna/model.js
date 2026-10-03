@@ -1,0 +1,127 @@
+import mongoose from "mongoose";
+
+const bolnaCallSchema = new mongoose.Schema(
+  {
+    candidateId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Candidate",
+      required: true,
+    },
+    jobId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "JobPosting",
+      required: true,
+    },
+    executionId: {
+      type: String,
+      required: true,
+      unique: true,
+    },
+    status: {
+      type: String,
+    },
+    callScheduledAt: {
+      type: Date,
+      required: true,
+    },
+    userScheduledAt: {
+      type: Date,
+      default: null,
+      required: false,
+    },
+    emailSent: {
+      type: Boolean,
+      default: false,
+    },
+    emailSentAt: {
+      type: Date,
+      default: null,
+    },
+    emailRetryCount: {
+      type: Number,
+      default: 0,
+    },
+    emailFailed: {
+      type: Boolean,
+      default: false,
+    },
+    emailFailedAt: {
+      type: Date,
+      default: null,
+    },
+    lastEmailError: {
+      type: String,
+      default: null,
+    },
+    lastEmailErrorAt: {
+      type: Date,
+      default: null,
+    },
+    assignRecruiter: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+      required: false,
+    },
+    meetLinkGenerated: {
+      type: Boolean,
+      default: false,
+    },
+    meetLink: {
+      type: String,
+      default: null,
+    },
+    meetLinkGeneratedAt: {
+      type: Date,
+      default: null,
+    },
+    calBookingUid: {
+      type: String,
+      default: null,
+      index: true,
+    },
+    jobDescription: {
+      type: String,
+      default: null,
+    },
+    transcript: {
+      type: String,
+      default: null,
+    },
+    screeningScore: {
+      type: Number,
+      default: null,
+      min: 0,
+      max: 100,
+    },
+    screeningAnalyzedAt: {
+      type: Date,
+      default: null,
+    },
+    screeningStatus: {
+      type: String,
+      enum: ["pending", "completed", "failed"],
+      default: "pending",
+    },
+    interviewOutcome: {
+      type: String,
+      enum: ["offer", "reject", null],
+      default: null,
+    },
+    interviewFeedback: {
+      type: String,
+      default: null,
+    },
+    interviewOutcomeAt: {
+      type: Date,
+      default: null,
+    },
+  },
+  {
+    timestamps: true,
+  }
+);
+
+const BolnaCall = mongoose.model("BolnaCall", bolnaCallSchema);
+
+export default BolnaCall;
